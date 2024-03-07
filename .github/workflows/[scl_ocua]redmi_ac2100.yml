@@ -8,7 +8,7 @@
 # Description: Build OpenWrt using GitHub Actions
 #
 
-name: Build Redmi AC2100 OpenWrt SCL Only CUA
+name: Build Redmi AC2100 OpenWrt SCL
 
 on:
   repository_dispatch:
@@ -25,10 +25,10 @@ env:
   REPO_URL: https://github.com/coolsnowwolf/lede
   REPO_BRANCH: master
   FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: config/app-extra-sclv2_ipv4only_testocua.config
+  CONFIG_FILE: config/Q30.config
   DIY_P1_SH: scripts/diy-part1-scl.sh
   DIY_P2_SH: scripts/diy-part2-scl.sh
-  UPLOAD_BIN_DIR: true
+  UPLOAD_BIN_DIR: false
   UPLOAD_FIRMWARE: true
   UPLOAD_COWTRANSFER: false
   UPLOAD_WETRANSFER: false
@@ -37,7 +37,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
 
     steps:
     - name: Checkout
@@ -47,34 +47,15 @@ jobs:
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
-        set +e
-        docker rmi `docker images -q`
-        echo "Deleting files, please wait ..."
-        sudo rm -rf \
-          /usr/share/dotnet \
-          /etc/mysql \
-          /etc/php
-        sudo -E apt-get -y purge \
-          azure-cli \
-          ghc* \
-          zulu* \
-          hhvm \
-          llvm* \
-          firefox \
-          google* \
-          dotnet* \
-          powershell \
-          openjdk* \
-          mysql* \
-          php*
-        sudo -E apt-get update
-        sudo -E apt-get -y install ack antlr3 aria2 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pip libpython3-dev qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
-        sudo -E apt-get -y autoremove --purge
-        sudo -E apt-get clean
+        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        sudo -E apt-get -qq update
+        sudo -E apt-get -qq install $(curl -fsSL git.io/depends-ubuntu-2004)
+        sudo -E apt-get -qq autoremove --purge
+        sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
         sudo mkdir -p /workdir
         sudo chown $USER:$GROUPS /workdir
-
+        
     - name: Clone source code
       working-directory: /workdir
       run: |
@@ -119,36 +100,51 @@ jobs:
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
         
-    # - name: Set firewall.user
-    #   id: others
-    #   run: |
-    #     cd openwrt
-    #     cat> package/network/config/firewall/files/firewall.user <<EOF
-    #     iptables -t nat -A PREROUTING -p udp --dport 53 -j REDIRECT --to-ports 53
-    #     iptables -t nat -A PREROUTING -p tcp --dport 53 -j REDIRECT --to-ports 53
-    #     iptables -t mangle -N ua2f
-    #     iptables -t mangle -A ua2f -d 0.0.0.0/8 -j RETURN
-    #     iptables -t mangle -A ua2f -d 127.0.0.0/8 -j RETURN
-    #     iptables -t mangle -A ua2f -d 192.168.0.0/16 -j RETURN
-    #     iptables -t mangle -A ua2f -d 169.254.0.0/16 -j RETURN
-    #     iptables -t mangle -A ua2f -d 224.0.0.0/4 -j RETURN
-    #     iptables -t mangle -A ua2f -d 240.0.0.0/4 -j RETURN
-    #     iptables -t mangle -A ua2f -p tcp --dport 443 -j RETURN
-    #     iptables -t mangle -A ua2f -p tcp --dport 22 -j RETURN
-    #     iptables -t mangle -A ua2f -p tcp --dport 80 -j CONNMARK --set-mark 44
-    #     iptables -t mangle -A ua2f -p tcp --dport 80 -m string --string "/mmtls/" --algo bm -j RETURN
-    #     iptables -t mangle -A ua2f -m connmark --mark 43 -j RETURN
-    #     iptables -t mangle -A ua2f -m set --match-set nohttp dst,dst -j RETURN
-    #     iptables -t mangle -A ua2f -j NFQUEUE --queue-num 10010  
-    #     iptables -t mangle -A FORWARD -p tcp -m conntrack --ctdir ORIGINAL -j ua2f
-    #     iptables -t nat -N ntp_force_local
-    #     iptables -t nat -I PREROUTING -p udp --dport 123 -j ntp_force_local
-    #     iptables -t nat -A ntp_force_local -d 0.0.0.0/8 -j RETURN
-    #     iptables -t nat -A ntp_force_local -d 127.0.0.0/8 -j RETURN
-    #     iptables -t nat -A ntp_force_local -d 192.168.0.0/16 -j RETURN
-    #     iptables -t nat -A ntp_force_local -s 192.168.0.0/16 -j DNAT --to-destination 192.168.66.1
-    #     iptables -t mangle -A POSTROUTING -j TTL --ttl-set 64
-    #     EOF
+    - name: Set firewall.user
+      id: others
+      run: |
+        cd openwrt
+        cat> package/network/config/firewall/files/firewall.user <<EOF
+        iptables -t nat -A PREROUTING -p udp --dport 53 -j REDIRECT --to-ports 53
+        iptables -t nat -A PREROUTING -p tcp --dport 53 -j REDIRECT --to-ports 53 
+        # 通过 rkp-ipid 设置 IPID
+        iptables -t mangle -N IPID_MOD
+        iptables -t mangle -A FORWARD -j IPID_MOD
+        iptables -t mangle -A OUTPUT -j IPID_MOD
+        iptables -t mangle -A IPID_MOD -d 0.0.0.0/8 -j RETURN
+        iptables -t mangle -A IPID_MOD -d 127.0.0.0/8 -j RETURN
+        #由于本校局域网是A类网，所以我将这一条注释掉了，具体要不要注释结合你所在的校园网
+        # iptables -t mangle -A IPID_MOD -d 10.0.0.0/8 -j RETURN
+        iptables -t mangle -A IPID_MOD -d 172.16.0.0/12 -j RETURN
+        iptables -t mangle -A IPID_MOD -d 192.168.0.0/16 -j RETURN
+        iptables -t mangle -A IPID_MOD -d 255.0.0.0/8 -j RETURN
+        iptables -t mangle -A IPID_MOD -j MARK --set-xmark 0x10/0x10 
+        # ua2f 改UA
+        iptables -t mangle -N ua2f
+        #由于本校局域网是A类网，所以我将这一条注释掉了，具体要不要注释结合你所在的校园网
+        # iptables -t mangle -A ua2f -d 10.0.0.0/8 -j RETURN
+        iptables -t mangle -A ua2f -d 127.0.0.0/8 -j RETURN
+        iptables -t mangle -A ua2f -d 192.168.0.0/16 -j RETURN # 不处理流向保留地址的包
+        iptables -t mangle -A ua2f -p tcp --dport 443 -j RETURN # 不处理 https
+        iptables -t mangle -A ua2f -p tcp --dport 22 -j RETURN # 不处理 SSH 
+        iptables -t mangle -A ua2f -p tcp --dport 80 -j CONNMARK --set-mark 44
+        iptables -t mangle -A ua2f -m connmark --mark 43 -j RETURN # 不处理标记为非 http 的流 (实验性)
+        iptables -t mangle -A ua2f -m set --match-set nohttp dst,dst -j RETURN
+        iptables -t mangle -A ua2f -j NFQUEUE --queue-num 10010  
+        iptables -t mangle -A FORWARD -p tcp -m conntrack --ctdir ORIGINAL -j ua2f
+        iptables -t mangle -A FORWARD -p tcp -m conntrack --ctdir REPLY  
+        # 防时钟偏移检测
+        iptables -t nat -N ntp_force_local
+        iptables -t nat -I PREROUTING -p udp --dport 123 -j ntp_force_local
+        iptables -t nat -A ntp_force_local -d 0.0.0.0/8 -j RETURN
+        iptables -t nat -A ntp_force_local -d 127.0.0.0/8 -j RETURN
+        iptables -t nat -A ntp_force_local -d 192.168.0.0/16 -j RETURN
+        iptables -t nat -A ntp_force_local -s 192.168.0.0/16 -j DNAT --to-destination 192.168.66.1 
+        # 通过 iptables 修改 TTL 值
+        iptables -t mangle -A POSTROUTING -j TTL --ttl-set 64
+        # iptables 拒绝 AC 进行 Flash 检测
+        iptables -I FORWARD -p tcp --sport 80 --tcp-flags ACK ACK -m string --algo bm --string " src=\"http://1.1.1." -j DROP
+        EOF
 
     - name: Compile the firmware
       id: compile
